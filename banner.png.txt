@@ -1,0 +1,6 @@
+Create a banner image (1200x630px recommended) and save as banner.png in the repo root.
+
+Recommended: Include the WhiskerNodes logo/text with a clean background.
+This image will appear on the ComfyUI Registry page.
+
+Example tools: Canva, Figma, Photoshop, or GIMP.

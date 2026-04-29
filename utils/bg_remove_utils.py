@@ -2,6 +2,8 @@ import torch
 import torch.nn.functional as F
 from torchvision import transforms
 
+# SECURITY WARNING: trust_remote_code=True allows executing arbitrary code from HuggingFace.
+# Only use models from trusted sources. See: https://huggingface.co/docs/hub/security
 MODEL_REGISTRY = {
     "BiRefNet": "ZhengPeng7/BiRefNet",
     "RMBG-2.0": "briaai/RMBG-2.0",

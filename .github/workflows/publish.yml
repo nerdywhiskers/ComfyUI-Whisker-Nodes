@@ -1,0 +1,18 @@
+name: Publish to ComfyUI Registry
+
+on:
+  push:
+    paths:
+      - pyproject.toml
+    branches: [ main ]
+
+jobs:
+  publish:
+    name: Publish Custom Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to Registry
+        uses: Comfy-Org/publish-node-action@main
+        with:
+          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}

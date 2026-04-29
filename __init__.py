@@ -1,9 +1,9 @@
-from .random_cube_grid import NODE_CLASS_MAPPINGS as RANDOM_GRID_NODES, NODE_DISPLAY_NAME_MAPPINGS as RANDOM_GRID_DISPLAY_NAMES
-from .offset_image import OffsetImageNode
-from .bg_remove import BGRemoveCompose
-from .strip_masks import StripMaskGenerator
-from .ratio_mask import RatioMask
-from .sprite_sheet import SpriteSheetGenerator
+from .nodes.random_cube_grid import NODE_CLASS_MAPPINGS as RANDOM_GRID_NODES, NODE_DISPLAY_NAME_MAPPINGS as RANDOM_GRID_DISPLAY_NAMES
+from .nodes.offset_image import OffsetImageNode
+from .nodes.bg_remove import BGRemoveCompose
+from .nodes.strip_masks import StripMaskGenerator
+from .nodes.ratio_mask import RatioMask
+from .nodes.sprite_sheet import SpriteSheetGenerator
 
 NODE_CLASS_MAPPINGS = {
     **RANDOM_GRID_NODES,

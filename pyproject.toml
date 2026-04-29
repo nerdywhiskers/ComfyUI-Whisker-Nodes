@@ -1,0 +1,30 @@
+[project]
+name = "comfyui-whisker-nodes"
+version = "1.0.0"
+description = "Image and mask compositing utilities for ComfyUI: background removal, sprite sheets, strip masks, ratio masks, cube grids, and image offsetting"
+authors = [
+    {name = "nerdywhiskers"}
+]
+license = {text = "Apache-2.0"}
+dependencies = [
+    "transformers>=4.40",
+    "numpy",
+    "Pillow"
+]
+requires-python = ">=3.8"
+
+[project.urls]
+Repository = "https://github.com/nerdywhiskers/WhiskerNodes"
+Homepage = "https://github.com/nerdywhiskers/WhiskerNodes"
+
+[tool.comfy]
+publisher-id = "nerdywhiskers"
+banner_url = "https://raw.githubusercontent.com/nerdywhiskers/WhiskerNodes/main/banner.png"
+nodes = [
+    "RandomCubeGrid",
+    "OffsetImageNode",
+    "BGRemoveCompose",
+    "StripMaskGenerator",
+    "RatioMask",
+    "SpriteSheetGenerator"
+]

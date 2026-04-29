@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+      - name: Run flake8
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  test-imports:
+    name: Test Imports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch numpy Pillow transformers torchvision
+      - name: Test imports
+        run: |
+          python -c "import sys; sys.path.insert(0, '.'); from nodes import NODE_CLASS_MAPPINGS; print('Import test passed:', list(NODE_CLASS_MAPPINGS.keys()))"

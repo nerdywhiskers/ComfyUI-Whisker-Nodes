@@ -1,0 +1,8 @@
+# Development dependencies
+flake8
+pytest
+torch
+numpy
+Pillow
+transformers
+torchvision
