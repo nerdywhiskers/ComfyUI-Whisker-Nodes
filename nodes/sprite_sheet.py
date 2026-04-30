@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from .bg_remove_utils import MODEL_REGISTRY, predict_mask, mask_bbox
+from utils.bg_remove_utils import MODEL_REGISTRY, predict_mask, mask_bbox
 
 
 def _pad_frame(frame, alpha, pad_top, pad_bottom, pad_left, pad_right):

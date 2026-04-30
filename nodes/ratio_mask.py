@@ -5,7 +5,7 @@ import torch
 from PIL import Image, ImageDraw, ImageFilter
 
 from .bg_remove import POSITIONS, resolve_position
-from .bg_remove_utils import hex_to_rgb
+from utils.bg_remove_utils import hex_to_rgb
 
 _RATIO_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$")
 
