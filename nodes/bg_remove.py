@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from utils.bg_remove_utils import MODEL_REGISTRY, predict_mask, mask_bbox, hex_to_rgb
+from ..utils.bg_remove_utils import MODEL_REGISTRY, predict_mask, mask_bbox, hex_to_rgb
 
 POSITIONS = [
     "top-left", "top-center", "top-right",

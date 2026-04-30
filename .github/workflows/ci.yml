@@ -40,6 +40,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch numpy Pillow transformers torchvision
-      - name: Test imports
+      - name: Test imports (mimic ComfyUI loader)
         run: |
-          python -c "import sys; sys.path.insert(0, '.'); from nodes import NODE_CLASS_MAPPINGS; print('Import test passed:', list(NODE_CLASS_MAPPINGS.keys()))"
+          # Load __init__.py via spec_from_file_location, the way ComfyUI's
+          # load_custom_node does. A plain `from nodes import ...` would put
+          # the repo root on sys.path and silently mask absolute-import bugs
+          # that break the package when ComfyUI loads it.
+          python - <<'PY'
+          import importlib.util, sys, pathlib
+          repo = pathlib.Path('.').resolve()
+          spec = importlib.util.spec_from_file_location(
+              "ComfyUI-Whisker-Nodes",
+              repo / "__init__.py",
+              submodule_search_locations=[str(repo)],
+          )
+          mod = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = mod
+          spec.loader.exec_module(mod)
+          print('Import test passed:', list(mod.NODE_CLASS_MAPPINGS.keys()))
+          PY
