@@ -18,7 +18,7 @@ Repository = "https://github.com/nerdywhiskers/ComfyUI-Whisker-Nodes"
 Homepage = "https://github.com/nerdywhiskers/ComfyUI-Whisker-Nodes"
 
 [tool.comfy]
-publisher-id = "nerdywhiskers"
+PublisherId = "nerdywhiskers"
 banner_url = "https://raw.githubusercontent.com/nerdywhiskers/ComfyUI-Whisker-Nodes/main/banner.png"
 nodes = [
     "RandomCubeGrid",
