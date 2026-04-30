@@ -1,6 +1,6 @@
 [project]
 name = "ComfyUI-Whisker-Nodes"
-version = "1.0.0"
+version = "1.0.1"
 description = "Image and mask compositing utilities for ComfyUI: background removal, sprite sheets, strip masks, ratio masks, cube grids, and image offsetting"
 authors = [
     {name = "nerdywhiskers"}
@@ -18,7 +18,7 @@ Repository = "https://github.com/nerdywhiskers/ComfyUI-Whisker-Nodes"
 Homepage = "https://github.com/nerdywhiskers/ComfyUI-Whisker-Nodes"
 
 [tool.comfy]
-publisher_id = "NerdyWhiskers"
+publisher_id = "nerdywhiskers"
 banner_url = "https://raw.githubusercontent.com/nerdywhiskers/ComfyUI-Whisker-Nodes/main/banner.png"
 nodes = [
     "RandomCubeGrid",
