@@ -63,6 +63,8 @@ Concatenates frames from an `IMAGE` batch (e.g. from VideoHelperSuite's "Load Vi
 
 ### Whisker: Ratio Mask
 
+<img width="1423" height="908" alt="image" src="https://github.com/user-attachments/assets/ef2a3076-443c-4fe7-9451-5c09cd85dcf2" />
+
 Generates a white rectangle of a given aspect ratio on a colored canvas, fit-resized to the canvas minus paddings.
 
 - `ratio`: free-text like `1:1`, `16:9`, `2.35:1`. Invalid input falls back to `1:1`.
