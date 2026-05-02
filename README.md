@@ -38,6 +38,8 @@ Restart ComfyUI after pulling.
 
 ### Whisker: BG Remove + Compose
 
+<img width="1625" height="609" alt="image" src="https://github.com/user-attachments/assets/c6f246a8-8f5f-4fe2-b64f-6fc8176f062f" />
+
 Removes the background of an input image with **BiRefNet** (MIT) or **RMBG-2.0** (BRIA, non-commercial) and composes the asset onto a canvas at user-specified dimensions.
 
 - `background`: `alpha` (transparent canvas) or `color` (solid `bg_color` canvas, alpha-blended).
@@ -50,6 +52,8 @@ Removes the background of an input image with **BiRefNet** (MIT) or **RMBG-2.0**
 The model is moved to GPU only during inference and back to CPU between calls (via `comfy.model_management`), so it can share VRAM with diffusion models.
 
 ### Whisker: Sprite Sheet Generator
+
+<img width="2092" height="1020" alt="image" src="https://github.com/user-attachments/assets/15ea0dea-103a-43b3-b70c-6a6a1363331a" />
 
 Concatenates frames from an `IMAGE` batch (e.g. from VideoHelperSuite's "Load Video" or stock animated-WebP loader) into a single sprite sheet.
 
@@ -77,6 +81,8 @@ Generates a white rectangle of a given aspect ratio on a colored canvas, fit-res
 
 ### Whisker: Strip Mask Generator
 
+<img width="1719" height="859" alt="image" src="https://github.com/user-attachments/assets/eb8adc42-9ab9-471f-8923-7d6bc3275cf6" />
+
 Generates 2–8 strip masks that tile a container without gaps or overlap.
 
 - `num_masks`: 2–8.
@@ -88,9 +94,13 @@ Generates 2–8 strip masks that tile a container without gaps or overlap.
 
 ### Whisker: Random Cube Grid Generator
 
+<img width="1741" height="876" alt="image" src="https://github.com/user-attachments/assets/029cf5e9-2933-49e5-b2d9-84b834d68ed8" />
+
 Procedurally places white squares on a black grid with control over density, gaps, sizing, and per-edge column rules. Outputs the image plus a JSON list of `{x, y, size}` cube coordinates for downstream use (the JSON pairs naturally with the `Block Grid Generator`-style nodes you might build on top of it).
 
 ### Whisker: Offset Image
+
+<img width="2329" height="785" alt="image" src="https://github.com/user-attachments/assets/cfef588e-e00a-4d86-8683-a4add3160032" />
 
 Wraps an image by `offset_x` / `offset_y` pixels via `torch.roll` (true tile-style shift) and emits a seam mask centered on the actual wrap line, with adjustable thickness and Gaussian blur — handy for inpainting seams to make seamless tiles.
 
