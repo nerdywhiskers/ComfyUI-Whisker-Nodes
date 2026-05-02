@@ -10,9 +10,9 @@ From the root of `ComfyUI_windows_portable`:
 
 ```bash
 cd ComfyUI\custom_nodes
-git clone https://github.com/jgbyte/ComfyUI-RandomCube.git
+git clone https://github.com/nerdywhiskers/ComfyUI-Whisker-Nodes.git
 cd ..\..
-python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-RandomCube\requirements.txt
+python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Whisker-Nodes\requirements.txt
 ```
 
 Then restart ComfyUI.
@@ -21,14 +21,14 @@ Then restart ComfyUI.
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/jgbyte/ComfyUI-RandomCube.git
-pip install -r ComfyUI-RandomCube/requirements.txt
+git clone https://github.com/nerdywhiskers/ComfyUI-Whisker-Nodes.git
+pip install -r ComfyUI-Whisker-Nodes/requirements.txt
 ```
 
 ### Updating
 
 ```bash
-cd ComfyUI/custom_nodes/ComfyUI-RandomCube
+cd ComfyUI/custom_nodes/ComfyUI-Whisker-Nodes
 git pull
 ```
 
