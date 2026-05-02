@@ -12,21 +12,25 @@ POSITIONS = [
 
 def resolve_position(position, canvas_h, canvas_w, asset_h, asset_w,
                       pad_top, pad_bottom, pad_left, pad_right):
+    """
+    Divide the canvas (minus per-side padding) into a 3x3 grid and center the
+    asset within the named cell. e.g. 'top-left' centers the asset in the
+    top-left third of the screen, not flush against the top-left corner.
+    Padding shrinks the active region; cells split that inner region evenly.
+    """
     v, h = position.split("-")
-    if v == "top":
-        cy = pad_top
-    elif v == "bottom":
-        cy = canvas_h - asset_h - pad_bottom
-    else:
-        inner_h = canvas_h - pad_top - pad_bottom
-        cy = pad_top + (inner_h - asset_h) // 2
-    if h == "left":
-        cx = pad_left
-    elif h == "right":
-        cx = canvas_w - asset_w - pad_right
-    else:
-        inner_w = canvas_w - pad_left - pad_right
-        cx = pad_left + (inner_w - asset_w) // 2
+    v_idx = {"top": 0, "middle": 1, "bottom": 2}[v]
+    h_idx = {"left": 0, "center": 1, "right": 2}[h]
+
+    inner_h = max(1, canvas_h - pad_top - pad_bottom)
+    inner_w = max(1, canvas_w - pad_left - pad_right)
+    cell_h = inner_h / 3
+    cell_w = inner_w / 3
+
+    cell_y0 = pad_top + v_idx * cell_h
+    cell_x0 = pad_left + h_idx * cell_w
+    cy = int(round(cell_y0 + (cell_h - asset_h) / 2))
+    cx = int(round(cell_x0 + (cell_w - asset_w) / 2))
     return cy, cx
 
 
@@ -42,10 +46,13 @@ class BGRemoveCompose:
       ignored in this mode.
     - resize_to_fit OFF: asset is sized via the 'scale' multiplier on its
       original (post-RMBG bbox) dimensions.
-    - padding_top/right/bottom/left: per-side pixel margins between asset
-      and canvas edges. Shift the 9-grid positions inward (e.g., top-left
-      places at (padding_top, padding_left)). Center positions center
-      within the inner box left after subtracting the paddings.
+    - position: 9-cell grid semantic. The canvas (minus paddings) is split
+      into a 3x3 grid and the asset is centered within the named cell. So
+      'top-left' centers the asset within the top-left third of the canvas,
+      not flush against the corner. Use small scales / resize_to_fit=False
+      to actually see the regional placement.
+    - padding_top/right/bottom/left: per-side pixel margins that shrink the
+      active region before it is split into the 3x3 grid.
 
     Output IMAGE is always 4-channel RGBA. In 'color' mode the alpha channel
     is fully opaque so the result saves identically to a 3-channel PNG.

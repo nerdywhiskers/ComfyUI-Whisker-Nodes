@@ -48,9 +48,24 @@ def load_model(name):
         ) from e
 
     _, offload = _devices()
-    model = AutoModelForImageSegmentation.from_pretrained(
-        MODEL_REGISTRY[name], trust_remote_code=True
-    )
+    try:
+        model = AutoModelForImageSegmentation.from_pretrained(
+            MODEL_REGISTRY[name], trust_remote_code=True
+        )
+    except ImportError as e:
+        if "timm" in str(e) or "timm.layers" in str(e):
+            raise ImportError(
+                "The BiRefNet/RMBG model requires 'timm>=1.0' (older versions "
+                "lack the 'timm.layers' module). Upgrade in the SAME Python that "
+                "runs ComfyUI:\n"
+                "  Portable: python_embeded\\python.exe -m pip install --upgrade \"timm>=1.0\"\n"
+                "  System:   pip install --upgrade \"timm>=1.0\"\n"
+                "If you already installed timm and still see this, your install "
+                "likely went to a different Python (e.g. user site-packages) than "
+                "the one ComfyUI launches. Run the upgrade with the exact "
+                "interpreter shown in the ComfyUI startup log."
+            ) from e
+        raise
     model.to(offload).eval()
     try:
         torch.set_float32_matmul_precision("high")
@@ -78,11 +93,12 @@ def predict_mask(image_bhwc, model_name):
 
     pre = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     resized = F.interpolate(img_bchw, size=(1024, 1024), mode="bilinear", align_corners=False)
-    inp = pre(resized).to(device)
 
     model.to(device)
     try:
-        preds = model(inp)[-1].sigmoid()
+        model_dtype = next(model.parameters()).dtype
+        inp = pre(resized).to(device=device, dtype=model_dtype)
+        preds = model(inp)[-1].float().sigmoid()
         if preds.dim() == 3:
             preds = preds.unsqueeze(1)
         mask = F.interpolate(preds, size=(h, w), mode="bilinear", align_corners=False)
