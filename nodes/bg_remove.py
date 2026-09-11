@@ -43,19 +43,38 @@ def resolve_position(
     return cy, cx
 
 
-def resolve_anchor(position, canvas_w, canvas_h, asset_w, asset_h):
-    anchors = {
-        "top-left": (0, 0),
-        "top-center": ((canvas_w - asset_w) // 2, 0),
-        "top-right": (canvas_w - asset_w, 0),
-        "middle-left": (0, (canvas_h - asset_h) // 2),
-        "middle-center": ((canvas_w - asset_w) // 2, (canvas_h - asset_h) // 2),
-        "middle-right": (canvas_w - asset_w, (canvas_h - asset_h) // 2),
-        "bottom-left": (0, canvas_h - asset_h),
-        "bottom-center": ((canvas_w - asset_w) // 2, canvas_h - asset_h),
-        "bottom-right": (canvas_w - asset_w, canvas_h - asset_h),
-    }
-    return anchors.get(position, anchors["middle-center"])
+def resolve_canvas_anchor(
+    position,
+    canvas_h,
+    canvas_w,
+    asset_h,
+    asset_w,
+    pad_top,
+    pad_bottom,
+    pad_left,
+    pad_right,
+):
+    """Place an asset against an edge or center of the padded canvas area."""
+    inner_y0 = min(pad_top, canvas_h - 1)
+    inner_x0 = min(pad_left, canvas_w - 1)
+    inner_y1 = max(inner_y0 + 1, canvas_h - pad_bottom)
+    inner_x1 = max(inner_x0 + 1, canvas_w - pad_right)
+    vertical, horizontal = position.split("-")
+    y = (
+        inner_y0
+        if vertical == "top"
+        else inner_y1 - asset_h
+        if vertical == "bottom"
+        else inner_y0 + (inner_y1 - inner_y0 - asset_h) // 2
+    )
+    x = (
+        inner_x0
+        if horizontal == "left"
+        else inner_x1 - asset_w
+        if horizontal == "right"
+        else inner_x0 + (inner_x1 - inner_x0 - asset_w) // 2
+    )
+    return y, x
 
 
 class BGRemoveCompose:
@@ -68,20 +87,16 @@ class BGRemoveCompose:
       2. Compute tight bounding box of the mask.
       3. Expand the bbox by crop_padding on all sides.
       4. Crop the image + alpha to that expanded region.
-      5. Resize the cropped asset into the canvas (fit-to-canvas or scale).
-      6. Anchor at the chosen position (never out-of-bounds because the
-         resized asset is clamped to canvas dimensions).
+      5. Resize the cropped asset into the padded destination area.
+      6. Anchor it to an edge or the center of that area.
 
-    - resize_mode = 'fit': scale the cropped asset to fit within the canvas
-      while preserving aspect ratio (letterbox effect). The padding area
-      is filled by the background setting.
-    - resize_mode = 'scale': multiply the cropped asset dimensions by the
-      scale factor. The result is clamped to the canvas size.
+    - resize_to_fit: fit the crop into the destination area proportionally.
+      When disabled, apply scale and proportionally reduce only if needed.
     - crop_padding: extra pixels added to all sides of the mask bbox before
       cropping.  Useful to give the subject breathing room.
     - position: simple anchor — places the resized asset flush against the
-      named edge/corner of the canvas (e.g. 'bottom-center' = centered
-      horizontally, sitting on the bottom edge).
+      named edge/corner of the padded area (e.g. 'bottom-center' is centered
+      horizontally and sits against the bottom margin).
     """
 
     @classmethod
@@ -94,15 +109,31 @@ class BGRemoveCompose:
                 "height": ("INT", {"default": 1024, "min": 16, "max": 8192, "step": 8}),
                 "background": (["alpha", "color"], {"default": "alpha"}),
                 "bg_color": ("STRING", {"default": "#ffffff"}),
-                "resize_mode": (["fit", "scale"], {"default": "fit"}),
+                "position": (POSITIONS, {"default": "middle-center"}),
+                "resize_to_fit": ("BOOLEAN", {"default": False}),
                 "scale": (
                     "FLOAT",
                     {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.05},
                 ),
-                "position": (POSITIONS, {"default": "middle-center"}),
+                "padding_top": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 4096, "step": 1},
+                ),
+                "padding_bottom": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 4096, "step": 1},
+                ),
+                "padding_left": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 4096, "step": 1},
+                ),
+                "padding_right": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 4096, "step": 1},
+                ),
                 "crop_padding": (
                     "INT",
-                    {"default": 0, "min": 0, "max": 512, "step": 1},
+                    {"default": 20, "min": 0, "max": 4096, "step": 1},
                 ),
             }
         }
@@ -120,9 +151,13 @@ class BGRemoveCompose:
         height,
         background,
         bg_color,
-        resize_mode,
-        scale,
         position,
+        resize_to_fit,
+        scale,
+        padding_top,
+        padding_bottom,
+        padding_left,
+        padding_right,
         crop_padding,
     ):
         b = image.shape[0]
@@ -139,6 +174,8 @@ class BGRemoveCompose:
         masks = predict_mask(image, model)
 
         orig_h, orig_w = image.shape[1], image.shape[2]
+        inner_h = max(1, height - padding_top - padding_bottom)
+        inner_w = max(1, width - padding_left - padding_right)
 
         for i in range(b):
             mask_i = masks[i]
@@ -160,16 +197,10 @@ class BGRemoveCompose:
             alpha = mask_i[y0:y1, x0:x1]
             ah, aw = asset.shape[:2]
 
-            if resize_mode == "fit":
-                fit = min(width / aw, height / ah)
-                new_w = max(1, int(round(aw * fit)))
-                new_h = max(1, int(round(ah * fit)))
-            else:
-                new_w = max(1, int(round(aw * scale)))
-                new_h = max(1, int(round(ah * scale)))
-
-            new_w = min(new_w, width)
-            new_h = min(new_h, height)
+            fit_scale = min(inner_w / aw, inner_h / ah)
+            resize_scale = fit_scale if resize_to_fit else min(scale, fit_scale)
+            new_w = min(inner_w, max(1, int(round(aw * resize_scale))))
+            new_h = min(inner_h, max(1, int(round(ah * resize_scale))))
 
             asset_chw = asset.permute(2, 0, 1).unsqueeze(0)
             asset_resized = F.interpolate(
@@ -188,7 +219,17 @@ class BGRemoveCompose:
                 .clamp(0.0, 1.0)
             )
 
-            dst_x, dst_y = resolve_anchor(position, width, height, new_w, new_h)
+            dst_y, dst_x = resolve_canvas_anchor(
+                position,
+                height,
+                width,
+                new_h,
+                new_w,
+                padding_top,
+                padding_bottom,
+                padding_left,
+                padding_right,
+            )
 
             a3 = alpha_resized.unsqueeze(-1)
             if background == "alpha":

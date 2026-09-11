@@ -43,10 +43,11 @@ Restart ComfyUI after pulling.
 Removes the background of an input image with **BiRefNet** (MIT) or **RMBG-2.0** (BRIA, non-commercial) and composes the asset onto a canvas at user-specified dimensions.
 
 - `background`: `alpha` (transparent canvas) or `color` (solid `bg_color` canvas, alpha-blended).
-- `position`: 9-grid (`top-left` … `bottom-right`).
-- `resize_to_fit`: when ON, asset scales to fit the canvas minus paddings, preserving aspect.
-- `scale`: multiplier on the asset's native size when `resize_to_fit` is OFF.
-- `padding_top/bottom/left/right`: per-side margins; affect both fit-scaling and 9-grid placement.
+- `position`: nine canvas anchors (`top-left` … `bottom-right`) within the padded destination area.
+- `resize_to_fit`: when ON, the cropped asset scales proportionally to fit the destination area without clipping.
+- `scale`: multiplier on the cropped asset when `resize_to_fit` is OFF; oversized results are reduced proportionally to fit.
+- `padding_top/bottom/left/right`: destination-canvas margins used for fitting and anchor placement.
+- `crop_padding`: source pixels retained around the predicted foreground bounds before resizing (default `20`).
 - Output: 4-channel RGBA `IMAGE` + `MASK`.
 
 The model is moved to GPU only during inference and back to CPU between calls (via `comfy.model_management`), so it can share VRAM with diffusion models.
