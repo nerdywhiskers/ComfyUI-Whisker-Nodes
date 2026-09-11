@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
@@ -9,7 +12,75 @@ MODEL_REGISTRY = {
     "RMBG-2.0": "briaai/RMBG-2.0",
 }
 
+# Local subdir names to probe under each ComfyUI `models/rmbg` root.
+LOCAL_SUBDIRS = {
+    "BiRefNet": ("BiRefNet", "birefnet", "ZhengPeng7--BiRefNet"),
+    "RMBG-2.0": ("RMBG-2.0", "rmbg-2.0", "RMBG-2_0", "briaai--RMBG-2.0"),
+}
+
 MODEL_CACHE = {}
+
+
+def _rmbg_roots():
+    """Candidate `models/rmbg` directories (ComfyUI portable + extras)."""
+    roots = []
+    try:
+        import folder_paths  # type: ignore
+
+        models_dir = Path(getattr(folder_paths, "models_dir", ""))
+        if str(models_dir) not in ("", "."):
+            roots.append(models_dir / "rmbg")
+    except Exception:
+        pass
+    try:
+        # <ComfyUI>/custom_nodes/ComfyUI-Whisker-Nodes/utils -> <ComfyUI>
+        comfy_dir = Path(__file__).resolve().parents[3]
+        roots.append(comfy_dir / "models" / "rmbg")
+    except Exception:
+        pass
+    for env_key in ("COMFYUI_MODELS_DIR", "COMFY_MODELS_DIR"):
+        val = os.environ.get(env_key)
+        if val:
+            roots.append(Path(val) / "rmbg")
+    # Extra path observed on this machine (extra_model_paths.yaml).
+    for p in (Path(r"F:\comfymodels\models\rmbg"), Path(r"F:\ComfyUI_windows_portable\ComfyUI\models\rmbg")):
+        roots.append(p)
+    # De-dupe while preserving order.
+    seen, unique = set(), []
+    for r in roots:
+        key = str(r).lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+    return unique
+
+
+def _local_model_path(name):
+    """Return a local model dir with config + weights, or None."""
+    for root in _rmbg_roots():
+        for sub in LOCAL_SUBDIRS.get(name, (name,)):
+            d = root / sub
+            try:
+                if not d.is_dir():
+                    continue
+                has_config = (d / "config.json").is_file() and (d / "config.json").stat().st_size > 0
+                has_weights = any(
+                    (d / f).is_file() and (d / f).stat().st_size > 0
+                    for f in ("model.safetensors", "pytorch_model.bin", "model.safetensors.index.json")
+                )
+                if has_config and has_weights:
+                    return str(d)
+            except Exception:
+                continue
+    return None
+
+
+def _hf_token():
+    return (
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+    )
 
 
 def _devices():
@@ -48,10 +119,38 @@ def load_model(name):
         ) from e
 
     _, offload = _devices()
+    repo_id = MODEL_REGISTRY[name]
+    # Prefer local ComfyUI weights (avoids gated HF downloads, e.g. RMBG-2.0
+    # already shipped by ComfyUI-RMBG under models/rmbg/RMBG-2.0).
+    source = _local_model_path(name) or repo_id
+    kwargs = {"trust_remote_code": True}
+    token = _hf_token()
+    if token and source == repo_id:
+        kwargs["token"] = token
     try:
-        model = AutoModelForImageSegmentation.from_pretrained(
-            MODEL_REGISTRY[name], trust_remote_code=True
-        )
+        # BiRefNet/RMBG-2.0's custom modelling does `self.config = Config()`
+        # (plain training hparams, birefnet.py:1984), discarding the HF
+        # PretrainedConfig. transformers>=4.55 calls
+        # `config.get_text_config()` inside `tie_weights()` during
+        # `from_pretrained`, which crashes with
+        # `AttributeError: 'Config' object has no attribute 'get_text_config'`.
+        # The model has no tied embeddings, so no-op the hook for this load.
+        try:
+            from transformers.modeling_utils import PreTrainedModel as _PTM
+
+            _orig_tie = _PTM.tie_weights
+            _PTM.tie_weights = lambda self: None  # type: ignore[method-assign]
+        except Exception:
+            _PTM = None  # type: ignore[assignment]
+            _orig_tie = None
+        try:
+            model = AutoModelForImageSegmentation.from_pretrained(source, **kwargs)
+        finally:
+            try:
+                if _PTM is not None and _orig_tie is not None:
+                    _PTM.tie_weights = _orig_tie  # type: ignore[method-assign]
+            except Exception:
+                pass
     except ImportError as e:
         if "timm" in str(e) or "timm.layers" in str(e):
             raise ImportError(
@@ -64,6 +163,32 @@ def load_model(name):
                 "likely went to a different Python (e.g. user site-packages) than "
                 "the one ComfyUI launches. Run the upgrade with the exact "
                 "interpreter shown in the ComfyUI startup log."
+            ) from e
+        raise
+    except OSError as e:
+        msg = str(e)
+        if "gated repo" in msg or "restricted" in msg or "403" in msg:
+            raise OSError(
+                f"Model '{name}' ({repo_id}) is gated on HuggingFace and this "
+                "machine is not authenticated.\n"
+                f"  1. Visit https://huggingface.co/{repo_id} and accept the terms.\n"
+                "  2. Create a token at https://huggingface.co/settings/tokens, then:\n"
+                "       python_embeded\\python.exe -m huggingface_hub.commands.huggingface_cli login\n"
+                "     or set HF_TOKEN (or HUGGING_FACE_HUB_TOKEN) before launching ComfyUI.\n"
+                "  3. Retry the node.\n"
+                f"Local fallback also checked under models/rmbg/{name} "
+                f"(last tried: {source}). Place config.json + model.safetensors there "
+                "to run fully offline."
+            ) from e
+        if "not a valid JSON file" in msg:
+            raise OSError(
+                f"Corrupted HuggingFace cache for '{name}' ({repo_id}): {msg}\n"
+                "A 0-byte config.json / model file was left by an interrupted download.\n"
+                "  1. Close ComfyUI.\n"
+                "  2. Delete the cache folder, e.g.:\n"
+                f"       Remove-Item -Recurse -Force \"$env:HF_HUB_CACHE\\models--{repo_id.replace('/', '--')}\"\n"
+                "     (your HF_HUB_CACHE is F:\\hf-cache\\hub)\n"
+                "  3. Relaunch and retry — it will re-download cleanly."
             ) from e
         raise
     model.to(offload).eval()
