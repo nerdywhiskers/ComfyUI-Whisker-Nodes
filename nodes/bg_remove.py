@@ -90,8 +90,9 @@ class BGRemoveCompose:
       5. Resize the cropped asset into the padded destination area.
       6. Anchor it to an edge or the center of that area.
 
-    - resize_to_fit: fit the crop into the destination area proportionally.
-      When disabled, apply scale and proportionally reduce only if needed.
+    - fit_to_canvas: fit the crop into the destination area proportionally
+      (original image scale is ignored while enabled). When disabled, apply
+      original image scale instead (reduced only if needed to fit).
     - crop_padding: extra pixels added to all sides of the mask bbox before
       cropping.  Useful to give the subject breathing room.
     - position: simple anchor — places the resized asset flush against the
@@ -105,15 +106,27 @@ class BGRemoveCompose:
             "required": {
                 "image": ("IMAGE",),
                 "model": (list(MODEL_REGISTRY.keys()), {"default": "BiRefNet"}),
-                "width": ("INT", {"default": 1024, "min": 16, "max": 8192, "step": 8}),
-                "height": ("INT", {"default": 1024, "min": 16, "max": 8192, "step": 8}),
+                "canvas_width": ("INT", {"default": 1024, "min": 16, "max": 8192, "step": 8}),
+                "canvas_height": ("INT", {"default": 1024, "min": 16, "max": 8192, "step": 8}),
                 "background": (["alpha", "color"], {"default": "alpha"}),
                 "bg_color": ("STRING", {"default": "#ffffff"}),
                 "position": (POSITIONS, {"default": "middle-center"}),
-                "resize_to_fit": ("BOOLEAN", {"default": False}),
-                "scale": (
+                "fit_to_canvas": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "Fit the cropped asset into the canvas proportionally. When enabled, original image scale is ignored.",
+                    },
+                ),
+                "original_image_scale": (
                     "FLOAT",
-                    {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.05},
+                    {
+                        "default": 1.0,
+                        "min": 0.1,
+                        "max": 2.0,
+                        "step": 0.05,
+                        "tooltip": "Scale factor applied to the cropped asset. Ignored while fit to canvas is enabled.",
+                    },
                 ),
                 "padding_top": (
                     "INT",
@@ -147,13 +160,13 @@ class BGRemoveCompose:
         self,
         image,
         model,
-        width,
-        height,
+        canvas_width,
+        canvas_height,
         background,
         bg_color,
         position,
-        resize_to_fit,
-        scale,
+        fit_to_canvas,
+        original_image_scale,
         padding_top,
         padding_bottom,
         padding_left,
@@ -162,7 +175,7 @@ class BGRemoveCompose:
     ):
         b = image.shape[0]
 
-        out_imgs = torch.zeros((b, height, width, 4), dtype=torch.float32)
+        out_imgs = torch.zeros((b, canvas_height, canvas_width, 4), dtype=torch.float32)
         if background == "color":
             rgb = hex_to_rgb(bg_color)
             bg_rgba = (
@@ -170,12 +183,12 @@ class BGRemoveCompose:
             )
             out_imgs[..., :] = bg_rgba
 
-        out_masks = torch.zeros((b, height, width), dtype=torch.float32)
+        out_masks = torch.zeros((b, canvas_height, canvas_width), dtype=torch.float32)
         masks = predict_mask(image, model)
 
         orig_h, orig_w = image.shape[1], image.shape[2]
-        inner_h = max(1, height - padding_top - padding_bottom)
-        inner_w = max(1, width - padding_left - padding_right)
+        inner_h = max(1, canvas_height - padding_top - padding_bottom)
+        inner_w = max(1, canvas_width - padding_left - padding_right)
 
         for i in range(b):
             mask_i = masks[i]
@@ -198,7 +211,7 @@ class BGRemoveCompose:
             ah, aw = asset.shape[:2]
 
             fit_scale = min(inner_w / aw, inner_h / ah)
-            resize_scale = fit_scale if resize_to_fit else min(scale, fit_scale)
+            resize_scale = fit_scale if fit_to_canvas else min(original_image_scale, fit_scale)
             new_w = min(inner_w, max(1, int(round(aw * resize_scale))))
             new_h = min(inner_h, max(1, int(round(ah * resize_scale))))
 
@@ -221,8 +234,8 @@ class BGRemoveCompose:
 
             dst_y, dst_x = resolve_canvas_anchor(
                 position,
-                height,
-                width,
+                canvas_height,
+                canvas_width,
                 new_h,
                 new_w,
                 padding_top,

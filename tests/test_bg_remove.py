@@ -8,13 +8,13 @@ from nodes import bg_remove  # noqa: E402
 EXPECTED_INPUTS = [
     "image",
     "model",
-    "width",
-    "height",
+    "canvas_width",
+    "canvas_height",
     "background",
     "bg_color",
     "position",
-    "resize_to_fit",
-    "scale",
+    "fit_to_canvas",
+    "original_image_scale",
     "padding_top",
     "padding_bottom",
     "padding_left",
@@ -27,13 +27,13 @@ def compose(monkeypatch, image, mask, **overrides):
     monkeypatch.setattr(bg_remove, "predict_mask", lambda _image, _model: mask)
     args = dict(
         model="BiRefNet",
-        width=20,
-        height=20,
+        canvas_width=20,
+        canvas_height=20,
         background="alpha",
         bg_color="#ffffff",
         position="middle-center",
-        resize_to_fit=False,
-        scale=1.0,
+        fit_to_canvas=False,
+        original_image_scale=1.0,
         padding_top=0,
         padding_bottom=0,
         padding_left=0,
@@ -66,8 +66,8 @@ def test_crop_padding_and_source_edge_clipping(monkeypatch, padding, bounds):
         monkeypatch,
         image,
         mask,
-        width=9,
-        height=8,
+        canvas_width=9,
+        canvas_height=8,
         position="top-left",
         crop_padding=padding,
     )
@@ -84,8 +84,8 @@ def test_all_canvas_anchors(monkeypatch, position, pads):
         monkeypatch,
         image,
         mask,
-        width=20,
-        height=16,
+        canvas_width=20,
+        canvas_height=16,
         position=position,
         padding_top=top,
         padding_bottom=bottom,
@@ -96,19 +96,19 @@ def test_all_canvas_anchors(monkeypatch, position, pads):
     assert nonzero_bounds(output_mask[0]) == (y, x, y + 2, x + 3)
 
 
-@pytest.mark.parametrize("resize_to_fit,scale", [(True, 1.0), (False, 10.0)])
-def test_resize_is_proportional_and_does_not_clip(monkeypatch, resize_to_fit, scale):
+@pytest.mark.parametrize("fit_to_canvas,original_image_scale", [(True, 1.0), (False, 10.0)])
+def test_resize_is_proportional_and_does_not_clip(monkeypatch, fit_to_canvas, original_image_scale):
     image = torch.ones((1, 4, 8, 3))
     mask = torch.ones((1, 4, 8))
     _, output_mask = compose(
         monkeypatch,
         image,
         mask,
-        width=12,
-        height=12,
+        canvas_width=12,
+        canvas_height=12,
         position="bottom-right",
-        resize_to_fit=resize_to_fit,
-        scale=scale,
+        fit_to_canvas=fit_to_canvas,
+        original_image_scale=original_image_scale,
         padding_top=2,
         padding_bottom=2,
         padding_left=2,
@@ -122,7 +122,7 @@ def test_alpha_color_batch_and_empty_mask(monkeypatch):
     image[0, ..., 0] = 1
     mask = torch.zeros((2, 2, 2))
     mask[0] = 0.5
-    alpha_image, alpha_mask = compose(monkeypatch, image, mask, width=4, height=4)
+    alpha_image, alpha_mask = compose(monkeypatch, image, mask, canvas_width=4, canvas_height=4)
     assert alpha_image.shape == (2, 4, 4, 4) and alpha_mask.shape == (2, 4, 4)
     assert torch.allclose(alpha_image[0, 1:3, 1:3, 3], torch.full((2, 2), 0.5))
     assert not alpha_image[1].any() and not alpha_mask[1].any()
@@ -130,8 +130,8 @@ def test_alpha_color_batch_and_empty_mask(monkeypatch):
         monkeypatch,
         image,
         mask,
-        width=4,
-        height=4,
+        canvas_width=4,
+        canvas_height=4,
         background="color",
         bg_color="#0000ff",
     )
