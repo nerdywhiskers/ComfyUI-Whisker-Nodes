@@ -6,12 +6,17 @@ from .bg_remove import POSITIONS, resolve_canvas_anchor
 
 
 def _pad_frame(frame, alpha, pad_top, pad_bottom, pad_left, pad_right,
-               position="middle-center"):
+               position="middle-center", crop_padding=0,
+               fit_to_canvas=False, original_image_scale=1.0):
     """
-    Bbox the asset using alpha, scale-to-fit (no upscale) within
-    (cell - paddings) preserving aspect ratio, and anchor inside the padded
-    area per position. Returns a frame and alpha of the same shape as the
-    input frame.
+    Crop the asset using the mask bbox expanded by crop_padding, scale it
+    into (cell - paddings) preserving aspect ratio, and anchor it inside
+    the padded area per position. Same crop -> scale -> anchor pipeline as
+    BG Remove + Compose, applied per sprite cell. Returns a frame and alpha
+    of the same shape as the input frame.
+
+    Defaults (crop 0, no fit-to-canvas, scale 1.0) reduce to the legacy
+    behavior: tight bbox, never upscale, centered.
     """
     H, W = int(frame.shape[0]), int(frame.shape[1])
     bbox = mask_bbox(alpha)
@@ -19,6 +24,15 @@ def _pad_frame(frame, alpha, pad_top, pad_bottom, pad_left, pad_right,
         return torch.zeros_like(frame), torch.zeros_like(alpha)
 
     y0, x0, y1, x1 = bbox
+
+    y0 = max(0, y0 - crop_padding)
+    x0 = max(0, x0 - crop_padding)
+    y1 = min(H, y1 + crop_padding)
+    x1 = min(W, x1 + crop_padding)
+
+    if y1 <= y0 or x1 <= x0:
+        return torch.zeros_like(frame), torch.zeros_like(alpha)
+
     asset = frame[y0:y1, x0:x1, :]
     asset_a = alpha[y0:y1, x0:x1]
     ah, aw = int(asset.shape[0]), int(asset.shape[1])
@@ -26,9 +40,10 @@ def _pad_frame(frame, alpha, pad_top, pad_bottom, pad_left, pad_right,
     avail_h = max(1, H - pad_top - pad_bottom)
     avail_w = max(1, W - pad_left - pad_right)
 
-    fit_scale = min(avail_h / ah, avail_w / aw, 1.0)
-    new_h = max(1, int(round(ah * fit_scale)))
-    new_w = max(1, int(round(aw * fit_scale)))
+    fit_scale = min(avail_w / aw, avail_h / ah)
+    resize_scale = fit_scale if fit_to_canvas else min(original_image_scale, fit_scale)
+    new_w = min(avail_w, max(1, int(round(aw * resize_scale))))
+    new_h = min(avail_h, max(1, int(round(ah * resize_scale))))
 
     if new_h != ah or new_w != aw:
         asset = F.interpolate(
@@ -100,9 +115,11 @@ class SpriteSheetGenerator:
         internally, so per-frame mask quality is reduced for large sheets).
 
     padding_top/bottom/left/right + position anchor each frame's asset:
-    bbox-crop via the mask (predicted, or incoming alpha when bg_removal is
-    'none'), scale to fit within (cell - paddings) preserving aspect ratio
-    (never upscaled), and anchor per position within the padded area.
+    bbox-crop expanded by crop_padding via the mask (predicted, or incoming
+    alpha when bg_removal is 'none'), scale into (cell - paddings) per
+    fit_to_canvas / original_image_scale preserving aspect ratio, and anchor
+    per position within the padded area. Same crop -> scale -> anchor
+    pipeline as BG Remove + Compose, applied per sprite cell.
     Effective when bg_removal is 'per-frame', and when bg_removal is 'none'
     with RGBA input frames. Ignored for 'whole-sheet'.
 
@@ -141,6 +158,33 @@ class SpriteSheetGenerator:
                 "padding_left": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
                 "padding_right": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
                 "position": (POSITIONS, {"default": "middle-center"}),
+                "crop_padding": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 4096,
+                        "step": 1,
+                        "tooltip": "Extra pixels kept around each frame's mask bbox before cropping, for breathing room. Same as BG Remove + Compose.",
+                    },
+                ),
+                "fit_to_canvas": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "Fit each cropped asset into the cell proportionally (allows upscaling). When off, the asset keeps its scale and is only reduced to fit. Same as BG Remove + Compose.",
+                    },
+                ),
+                "original_image_scale": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.1,
+                        "max": 2.0,
+                        "step": 0.05,
+                        "tooltip": "Scale factor applied to each cropped asset. Ignored while fit to canvas is enabled. Same as BG Remove + Compose.",
+                    },
+                ),
                 "batch_size": (
                     "INT",
                     {
@@ -162,7 +206,8 @@ class SpriteSheetGenerator:
     def generate(self, frames, target_frame_count, start_index, end_index,
                  grid_cols, grid_rows, target_resolution, bg_removal, model,
                  padding_top, padding_bottom, padding_left, padding_right,
-                 position="middle-center", batch_size=4):
+                 position="middle-center", batch_size=4,
+                 crop_padding=0, fit_to_canvas=False, original_image_scale=1.0):
         final = _prune_frames(frames, target_frame_count, start_index, end_index)
         n_final = int(final.shape[0])
 
@@ -219,7 +264,7 @@ class SpriteSheetGenerator:
                 pf, pa = _pad_frame(
                     final[i], per_frame_alpha[i],
                     padding_top, padding_bottom, padding_left, padding_right,
-                    position,
+                    position, crop_padding, fit_to_canvas, original_image_scale,
                 )
                 padded_frames.append(pf)
                 padded_alphas.append(pa)
@@ -232,7 +277,7 @@ class SpriteSheetGenerator:
                 pf, pa = _pad_frame(
                     final[i], input_alpha[i],
                     padding_top, padding_bottom, padding_left, padding_right,
-                    position,
+                    position, crop_padding, fit_to_canvas, original_image_scale,
                 )
                 anchored_frames.append(pf)
                 anchored_alphas.append(pa)

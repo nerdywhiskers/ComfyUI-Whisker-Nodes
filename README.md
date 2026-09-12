@@ -64,6 +64,7 @@ Concatenates frames from an `IMAGE` batch (e.g. from VideoHelperSuite's "Load Vi
 - `target_resolution`: longest side of the final sheet (frames are resized first, so memory tracks the output size).
 - `bg_removal`: `none`, `per-frame` (BiRefNet/RMBG on each frame), or `whole-sheet` (single pass on the assembled sheet).
 - `padding_top/bottom/left/right` + `position`: only effective with `per-frame` bg removal (or `none` with RGBA input) — each frame's asset is bbox-cropped and anchored within `(cell − paddings)`.
+- `crop_padding` / `fit_to_canvas` / `original_image_scale`: same crop → scale → anchor pipeline as BG Remove + Compose, applied per sprite cell (defaults preserve the legacy tight-crop, never-upscale behavior).
 - `batch_size`: frames per bg-removal forward pass (default `4`). Only one chunk is on GPU at a time; lower to `1`–`2` on small GPUs, OOMs auto-retry in halves.
 - Output: 4-channel RGBA `IMAGE` + `MASK`.
 
