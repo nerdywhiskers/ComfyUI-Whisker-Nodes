@@ -203,8 +203,13 @@ def load_model(name):
 @torch.inference_mode()
 def predict_mask(image_bhwc, model_name):
     """
-    image_bhwc: torch.Tensor in ComfyUI IMAGE format (B, H, W, 3), float32 in [0, 1].
+    image_bhwc: torch.Tensor in ComfyUI IMAGE format (B, H, W, 3 or 4), float32 in [0, 1].
     Returns: mask (B, H, W) float32 in [0, 1], at the original H×W.
+
+    RGBA input (e.g. from Sprite Sheet Generator, which always emits 4
+    channels) is accepted: only the first 3 channels are fed to the model.
+    Callers that need to preserve incoming transparency should combine the
+    returned mask with image_bhwc[..., 3] themselves.
 
     The model lives on the offload device between calls and is moved to the
     compute device only for inference, then moved back. This lets BiRefNet /
@@ -213,7 +218,11 @@ def predict_mask(image_bhwc, model_name):
     model = load_model(model_name)
     device, offload = _devices()
 
-    _, h, w, _ = image_bhwc.shape
+    _, h, w, c = image_bhwc.shape
+    if c == 4:
+        image_bhwc = image_bhwc[..., :3]
+    elif c != 3:
+        raise ValueError(f"Expected IMAGE with 3 or 4 channels, got shape {tuple(image_bhwc.shape)}")
     img_bchw = image_bhwc.permute(0, 3, 1, 2).contiguous()
 
     pre = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
