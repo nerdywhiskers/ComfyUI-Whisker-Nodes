@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI-Whisker-Nodes"
 version = "1.0.3"
-description = "Image and mask compositing utilities for ComfyUI: background removal, sprite sheets, strip masks, ratio masks, cube grids, and image offsetting"
+description = "Image and mask compositing utilities for ComfyUI: background removal, sprite sheets, strip masks, shape masks, cube grids, and image offsetting"
 authors = [
     {name = "nerdywhiskers"}
 ]
@@ -25,6 +25,6 @@ nodes = [
     "OffsetImageNode",
     "BGRemoveCompose",
     "StripMaskGenerator",
-    "RatioMask",
+    "ShapeMask",
     "SpriteSheetGenerator"
 ]

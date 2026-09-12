@@ -89,9 +89,9 @@
     },
     {
       "id": 6,
-      "type": "ratio_mask",
+      "type": "shape_mask",
       "pos": [40, 760],
-      "size": [330, 390],
+      "size": [330, 340],
       "flags": {},
       "order": 4,
       "mode": 0,
@@ -100,8 +100,8 @@
         {"name": "image", "type": "IMAGE", "links": [3], "slot_index": 0},
         {"name": "mask", "type": "MASK", "links": null, "slot_index": 1}
       ],
-      "properties": {"Node name for S&R": "ratio_mask"},
-      "widgets_values": [512, 512, "16:9", "middle-center", "#182033", 32, 4.0, 32, 32, 32, 32]
+      "properties": {"Node name for S&R": "shape_mask"},
+      "widgets_values": [512, 512, 512, 288, "middle-center", "#182033", 20.0, 4.0]
     },
     {
       "id": 7,
@@ -183,7 +183,7 @@
       "inputs": [],
       "outputs": [],
       "properties": {},
-      "widgets_values": ["Whisker Nodes sample: Random Cube Grid feeds Sprite Sheet on the top row. Ratio Mask feeds BG Remove + Compose and Offset Image on the middle row. The bottom row previews the first Strip Mask output. BiRefNet downloads on first run."]
+      "widgets_values": ["Whisker Nodes sample: Random Cube Grid feeds Sprite Sheet on the top row. Shape Mask feeds BG Remove + Compose and Offset Image on the middle row. The bottom row previews the first Strip Mask output. BiRefNet downloads on first run."]
     }
   ],
   "links": [
@@ -197,7 +197,7 @@
   ],
   "groups": [
     {"title": "Generated image to sprite sheet", "bounding": [20, 90, 1190, 550], "color": "#3f789e", "font_size": 24, "flags": {}},
-    {"title": "Ratio mask through background removal and offset", "bounding": [20, 710, 1570, 550], "color": "#6b8e23", "font_size": 24, "flags": {}},
+    {"title": "Shape mask through background removal and offset", "bounding": [20, 710, 1570, 550], "color": "#6b8e23", "font_size": 24, "flags": {}},
     {"title": "Strip mask preview", "bounding": [20, 1320, 1070, 470], "color": "#8e6b23", "font_size": 24, "flags": {}}
   ],
   "config": {},
