@@ -98,6 +98,10 @@ class BGRemoveCompose:
     - position: simple anchor — places the resized asset flush against the
       named edge/corner of the padded area (e.g. 'bottom-center' is centered
       horizontally and sits against the bottom margin).
+
+    Accepts RGB or RGBA IMAGE input (e.g. Sprite Sheet Generator output).
+    Only RGB is fed to the model; any incoming alpha is multiplied into the
+    final mask so chained transparency is preserved.
     """
 
     @classmethod
@@ -175,6 +179,20 @@ class BGRemoveCompose:
     ):
         b = image.shape[0]
 
+        # Accept RGB or RGBA (e.g. Sprite Sheet Generator always emits RGBA).
+        # Mask prediction and compositing use RGB; any incoming alpha is
+        # folded into the final mask so chained transparency is preserved.
+        if image.shape[3] == 4:
+            in_rgb = image[..., :3]
+            input_alpha = image[..., 3]
+        elif image.shape[3] == 3:
+            in_rgb = image
+            input_alpha = None
+        else:
+            raise ValueError(
+                f"Expected IMAGE with 3 or 4 channels, got shape {tuple(image.shape)}"
+            )
+
         out_imgs = torch.zeros((b, canvas_height, canvas_width, 4), dtype=torch.float32)
         if background == "color":
             rgb = hex_to_rgb(bg_color)
@@ -184,9 +202,9 @@ class BGRemoveCompose:
             out_imgs[..., :] = bg_rgba
 
         out_masks = torch.zeros((b, canvas_height, canvas_width), dtype=torch.float32)
-        masks = predict_mask(image, model)
+        masks = predict_mask(in_rgb, model)
 
-        orig_h, orig_w = image.shape[1], image.shape[2]
+        orig_h, orig_w = in_rgb.shape[1], in_rgb.shape[2]
         inner_h = max(1, canvas_height - padding_top - padding_bottom)
         inner_w = max(1, canvas_width - padding_left - padding_right)
 
@@ -206,8 +224,10 @@ class BGRemoveCompose:
             if y1 <= y0 or x1 <= x0:
                 continue
 
-            asset = image[i, y0:y1, x0:x1, :]
+            asset = in_rgb[i, y0:y1, x0:x1, :]
             alpha = mask_i[y0:y1, x0:x1]
+            if input_alpha is not None:
+                alpha = alpha * input_alpha[i, y0:y1, x0:x1]
             ah, aw = asset.shape[:2]
 
             fit_scale = min(inner_w / aw, inner_h / ah)

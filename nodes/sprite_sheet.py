@@ -2,13 +2,16 @@ import torch
 import torch.nn.functional as F
 
 from ..utils.bg_remove_utils import MODEL_REGISTRY, predict_mask, mask_bbox
+from .bg_remove import POSITIONS, resolve_canvas_anchor
 
 
-def _pad_frame(frame, alpha, pad_top, pad_bottom, pad_left, pad_right):
+def _pad_frame(frame, alpha, pad_top, pad_bottom, pad_left, pad_right,
+               position="middle-center"):
     """
     Bbox the asset using alpha, scale-to-fit (no upscale) within
-    (cell - paddings) preserving aspect ratio, and center inside the padded
-    area. Returns a frame and alpha of the same shape as the input frame.
+    (cell - paddings) preserving aspect ratio, and anchor inside the padded
+    area per position. Returns a frame and alpha of the same shape as the
+    input frame.
     """
     H, W = int(frame.shape[0]), int(frame.shape[1])
     bbox = mask_bbox(alpha)
@@ -37,8 +40,10 @@ def _pad_frame(frame, alpha, pad_top, pad_bottom, pad_left, pad_right):
             size=(new_h, new_w), mode="bilinear", align_corners=False,
         ).squeeze(0).squeeze(0).clamp(0.0, 1.0)
 
-    cy = pad_top + (avail_h - new_h) // 2
-    cx = pad_left + (avail_w - new_w) // 2
+    cy, cx = resolve_canvas_anchor(
+        position, H, W, new_h, new_w,
+        pad_top, pad_bottom, pad_left, pad_right,
+    )
 
     new_frame = torch.zeros_like(frame)
     new_alpha = torch.zeros_like(alpha)
@@ -94,13 +99,21 @@ class SpriteSheetGenerator:
         removal pass on the entire sheet (model downsamples to 1024
         internally, so per-frame mask quality is reduced for large sheets).
 
-    padding_top/bottom/left/right are only effective when bg_removal is
-    'per-frame'. Each frame's asset is bbox-cropped, scaled to fit within
-    (cell - paddings) preserving aspect ratio (never upscaled), and
-    centered within the padded area. Ignored otherwise.
+    padding_top/bottom/left/right + position anchor each frame's asset:
+    bbox-crop via the mask (predicted, or incoming alpha when bg_removal is
+    'none'), scale to fit within (cell - paddings) preserving aspect ratio
+    (never upscaled), and anchor per position within the padded area.
+    Effective when bg_removal is 'per-frame', and when bg_removal is 'none'
+    with RGBA input frames. Ignored for 'whole-sheet'.
 
     The output IMAGE is always 4-channel RGBA. The MASK output mirrors the
-    sheet's alpha channel (all 1s when bg_removal is 'none').
+    sheet's alpha channel (all 1s when bg_removal is 'none' and the input
+    has no alpha).
+
+    RGBA input frames are accepted: only RGB is fed to the bg-removal
+    model, while any incoming alpha is preserved (multiplied with the
+    predicted mask, or tiled directly when bg_removal is 'none') so that
+    chaining stays transparent.
 
     If grid_cols * grid_rows exceeds the final frame count, trailing cells
     are blank. If it is smaller, extra frames are dropped.
@@ -123,6 +136,7 @@ class SpriteSheetGenerator:
                 "padding_bottom": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
                 "padding_left": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
                 "padding_right": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
+                "position": (POSITIONS, {"default": "middle-center"}),
             }
         }
 
@@ -133,7 +147,8 @@ class SpriteSheetGenerator:
 
     def generate(self, frames, target_frame_count, start_index, end_index,
                  grid_cols, grid_rows, target_resolution, bg_removal, model,
-                 padding_top, padding_bottom, padding_left, padding_right):
+                 padding_top, padding_bottom, padding_left, padding_right,
+                 position="middle-center"):
         final = _prune_frames(frames, target_frame_count, start_index, end_index)
         n_final = int(final.shape[0])
 
@@ -141,6 +156,16 @@ class SpriteSheetGenerator:
             empty_img = torch.zeros((1, 1, 1, 4), dtype=torch.float32)
             empty_mask = torch.zeros((1, 1, 1), dtype=torch.float32)
             return (empty_img, empty_mask)
+
+        if final.shape[3] == 4:
+            input_alpha = final[..., 3].contiguous()
+            final = final[..., :3].contiguous()
+        elif final.shape[3] == 3:
+            input_alpha = None
+        else:
+            raise ValueError(
+                f"Expected frames IMAGE with 3 or 4 channels, got shape {tuple(final.shape)}"
+            )
 
         H = int(final.shape[1])
         W = int(final.shape[2])
@@ -155,6 +180,10 @@ class SpriteSheetGenerator:
                 final_chw = F.interpolate(final_chw, size=(new_H, new_W),
                                           mode="bilinear", align_corners=False)
                 final = final_chw.permute(0, 2, 3, 1).contiguous()
+                if input_alpha is not None:
+                    in_a = F.interpolate(input_alpha.unsqueeze(1), size=(new_H, new_W),
+                                         mode="bilinear", align_corners=False)
+                    input_alpha = in_a.squeeze(1).clamp(0.0, 1.0).contiguous()
                 H, W = new_H, new_W
 
         cells = grid_rows * grid_cols
@@ -168,18 +197,34 @@ class SpriteSheetGenerator:
 
         if bg_removal == "per-frame":
             per_frame_alpha = predict_mask(final[:n_use], model)
-            if padding_top or padding_bottom or padding_left or padding_right:
-                padded_frames = []
-                padded_alphas = []
-                for i in range(n_use):
-                    pf, pa = _pad_frame(
-                        final[i], per_frame_alpha[i],
-                        padding_top, padding_bottom, padding_left, padding_right,
-                    )
-                    padded_frames.append(pf)
-                    padded_alphas.append(pa)
-                final = torch.stack(padded_frames, dim=0)
-                per_frame_alpha = torch.stack(padded_alphas, dim=0)
+            if input_alpha is not None:
+                per_frame_alpha = per_frame_alpha * input_alpha[:n_use]
+            padded_frames = []
+            padded_alphas = []
+            for i in range(n_use):
+                pf, pa = _pad_frame(
+                    final[i], per_frame_alpha[i],
+                    padding_top, padding_bottom, padding_left, padding_right,
+                    position,
+                )
+                padded_frames.append(pf)
+                padded_alphas.append(pa)
+            final = torch.stack(padded_frames, dim=0)
+            per_frame_alpha = torch.stack(padded_alphas, dim=0)
+        elif bg_removal == "none" and input_alpha is not None:
+            anchored_frames = []
+            anchored_alphas = []
+            for i in range(n_use):
+                pf, pa = _pad_frame(
+                    final[i], input_alpha[i],
+                    padding_top, padding_bottom, padding_left, padding_right,
+                    position,
+                )
+                anchored_frames.append(pf)
+                anchored_alphas.append(pa)
+            final = torch.stack(anchored_frames, dim=0)
+            input_alpha = torch.stack(anchored_alphas, dim=0)
+            per_frame_alpha = None
         else:
             per_frame_alpha = None
 
@@ -193,6 +238,10 @@ class SpriteSheetGenerator:
                 a = per_frame_alpha[i]
                 sheet[0, y0:y1, x0:x1, 3] = a
                 mask_sheet[0, y0:y1, x0:x1] = a
+            elif input_alpha is not None:
+                a = input_alpha[i]
+                sheet[0, y0:y1, x0:x1, 3] = a
+                mask_sheet[0, y0:y1, x0:x1] = a
             else:
                 sheet[0, y0:y1, x0:x1, 3] = 1.0
                 mask_sheet[0, y0:y1, x0:x1] = 1.0
@@ -200,6 +249,9 @@ class SpriteSheetGenerator:
         if bg_removal == "whole-sheet":
             sheet_rgb = sheet[..., 0:3]
             whole_mask = predict_mask(sheet_rgb, model)
+            if input_alpha is not None:
+                # mask_sheet currently holds the tiled incoming alpha.
+                whole_mask = whole_mask * mask_sheet
             sheet[..., 3] = whole_mask
             mask_sheet = whole_mask
 
