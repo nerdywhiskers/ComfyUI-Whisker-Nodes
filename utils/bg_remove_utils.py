@@ -20,6 +20,11 @@ LOCAL_SUBDIRS = {
 
 MODEL_CACHE = {}
 
+# Frames per bg-removal forward pass when the caller doesn't specify one.
+# The model upsamples every frame to 1024x1024, so VRAM scales with batch
+# size — chunking keeps high frame counts from OOMing.
+DEFAULT_MASK_BATCH_SIZE = 4
+
 
 def _rmbg_roots():
     """Candidate `models/rmbg` directories (ComfyUI portable + extras)."""
@@ -201,7 +206,7 @@ def load_model(name):
 
 
 @torch.inference_mode()
-def predict_mask(image_bhwc, model_name):
+def predict_mask(image_bhwc, model_name, batch_size=None):
     """
     image_bhwc: torch.Tensor in ComfyUI IMAGE format (B, H, W, 3 or 4), float32 in [0, 1].
     Returns: mask (B, H, W) float32 in [0, 1], at the original H×W.
@@ -211,12 +216,20 @@ def predict_mask(image_bhwc, model_name):
     Callers that need to preserve incoming transparency should combine the
     returned mask with image_bhwc[..., 3] themselves.
 
+    batch_size caps how many frames go through the model per forward pass
+    (default DEFAULT_MASK_BATCH_SIZE). Only one chunk is on the compute
+    device at a time, so large batches cost time, not VRAM. On a CUDA out
+    of memory, the failing chunk is automatically retried in halves down
+    to single frames before giving up with guidance.
+
     The model lives on the offload device between calls and is moved to the
     compute device only for inference, then moved back. This lets BiRefNet /
     RMBG-2.0 share VRAM with diffusion models on smaller GPUs.
     """
     model = load_model(model_name)
     device, offload = _devices()
+
+    per = max(1, int(batch_size or DEFAULT_MASK_BATCH_SIZE))
 
     _, h, w, c = image_bhwc.shape
     if c == 4:
@@ -228,15 +241,45 @@ def predict_mask(image_bhwc, model_name):
     pre = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     resized = F.interpolate(img_bchw, size=(1024, 1024), mode="bilinear", align_corners=False)
 
+    def _oom_guidance():
+        return (
+            "BG-removal model ran out of memory even one frame at a time. "
+            "Lower 'target_frame_count', set 'target_resolution' (e.g. 2048), "
+            "close other GPU apps, or after the diffusion model has offloaded, then retry."
+        )
+
     model.to(device)
     try:
         model_dtype = next(model.parameters()).dtype
-        inp = pre(resized).to(device=device, dtype=model_dtype)
-        preds = model(inp)[-1].float().sigmoid()
-        if preds.dim() == 3:
-            preds = preds.unsqueeze(1)
-        mask = F.interpolate(preds, size=(h, w), mode="bilinear", align_corners=False)
-        result = mask.squeeze(1).clamp(0.0, 1.0).cpu()
+        out = []
+
+        def run(lo, hi):
+            n = hi - lo
+            try:
+                inp = pre(resized[lo:hi]).to(device=device, dtype=model_dtype)
+                preds = model(inp)[-1].float().sigmoid()
+                if preds.dim() == 3:
+                    preds = preds.unsqueeze(1)
+                m = F.interpolate(preds, size=(h, w), mode="bilinear", align_corners=False)
+                out.append(m.squeeze(1).clamp(0.0, 1.0).cpu())
+                del inp, preds, m
+            except RuntimeError as e:
+                if "out of memory" not in str(e).lower():
+                    raise
+                _soft_empty_cache()
+                if n <= 1:
+                    raise RuntimeError(_oom_guidance()) from e
+                mid = lo + n // 2
+                run(lo, mid)
+                run(mid, hi)
+            else:
+                _soft_empty_cache()
+
+        lo, total = 0, resized.shape[0]
+        while lo < total:
+            run(lo, min(lo + per, total))
+            lo += per
+        result = torch.cat(out, dim=0)
     finally:
         model.to(offload)
         _soft_empty_cache()

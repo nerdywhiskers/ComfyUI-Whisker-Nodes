@@ -106,6 +106,10 @@ class SpriteSheetGenerator:
     Effective when bg_removal is 'per-frame', and when bg_removal is 'none'
     with RGBA input frames. Ignored for 'whole-sheet'.
 
+    batch_size caps how many frames go through bg removal per forward pass.
+    Only one chunk sits on GPU at a time, so high frame counts cost time,
+    not VRAM; OOMs halve the chunk automatically down to single frames.
+
     The output IMAGE is always 4-channel RGBA. The MASK output mirrors the
     sheet's alpha channel (all 1s when bg_removal is 'none' and the input
     has no alpha).
@@ -137,6 +141,16 @@ class SpriteSheetGenerator:
                 "padding_left": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
                 "padding_right": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
                 "position": (POSITIONS, {"default": "middle-center"}),
+                "batch_size": (
+                    "INT",
+                    {
+                        "default": 4,
+                        "min": 1,
+                        "max": 128,
+                        "step": 1,
+                        "tooltip": "Frames per bg-removal forward pass. Only one chunk is on GPU at a time, so lower to 1-2 on small GPUs if per-frame bg removal runs out of memory.",
+                    },
+                ),
             }
         }
 
@@ -148,7 +162,7 @@ class SpriteSheetGenerator:
     def generate(self, frames, target_frame_count, start_index, end_index,
                  grid_cols, grid_rows, target_resolution, bg_removal, model,
                  padding_top, padding_bottom, padding_left, padding_right,
-                 position="middle-center"):
+                 position="middle-center", batch_size=4):
         final = _prune_frames(frames, target_frame_count, start_index, end_index)
         n_final = int(final.shape[0])
 
@@ -196,7 +210,7 @@ class SpriteSheetGenerator:
         mask_sheet = torch.zeros((1, sheet_h, sheet_w), dtype=torch.float32)
 
         if bg_removal == "per-frame":
-            per_frame_alpha = predict_mask(final[:n_use], model)
+            per_frame_alpha = predict_mask(final[:n_use], model, batch_size=batch_size)
             if input_alpha is not None:
                 per_frame_alpha = per_frame_alpha * input_alpha[:n_use]
             padded_frames = []
