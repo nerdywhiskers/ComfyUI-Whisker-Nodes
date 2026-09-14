@@ -1,6 +1,6 @@
 [project]
 name = "ComfyUI-Whisker-Nodes"
-version = "1.0.3"
+version = "1.1.0"
 description = "Image and mask compositing utilities for ComfyUI: background removal, sprite sheets, strip masks, shape masks, cube grids, and image offsetting"
 authors = [
     {name = "nerdywhiskers"}
